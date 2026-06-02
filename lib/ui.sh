@@ -24,12 +24,12 @@ ui_title() {
   local text="$1"
   case "$UI_BACKEND" in
     gum)
-      gum style --border double --padding "0 2" --margin "1 0" "$text"
+      gum style --border double --padding "0 2" --margin "1 0" "$text" >&2
       ;;
     *)
-      echo ""
-      echo "=== $text ==="
-      echo ""
+      echo "" >&2
+      echo "=== $text ===" >&2
+      echo "" >&2
       ;;
   esac
 }
@@ -41,7 +41,7 @@ ui_info() {
       gum log --level info "$text"
       ;;
     *)
-      echo "[i] $text"
+      echo "[i] $text" >&2
       ;;
   esac
 }
@@ -77,7 +77,7 @@ ui_success() {
       gum style --foreground 10 "$text"
       ;;
     *)
-      echo "[ok] $text"
+      echo "[ok] $text" >&2
       ;;
   esac
 }
@@ -109,9 +109,9 @@ ui_confirm() {
     whiptail|dialog)
       local cmd="$UI_BACKEND"
       if [[ "$default" == "true" ]]; then
-        $cmd --yesno "$prompt" 10 70
+        $cmd --yesno "$prompt" 10 70 </dev/tty
       else
-        $cmd --defaultno --yesno "$prompt" 10 70
+        $cmd --defaultno --yesno "$prompt" 10 70 </dev/tty
       fi
       ;;
     *)
@@ -137,7 +137,7 @@ ui_input() {
   local placeholder="${3:-}"
 
   if [[ "${NONINTERACTIVE:-0}" == "1" ]]; then
-    echo "$default"
+    printf '%s' "$default"
     return 0
   fi
 
@@ -149,13 +149,16 @@ ui_input() {
       gum "${args[@]}"
       ;;
     whiptail|dialog)
-      local cmd="$UI_BACKEND"
-      $cmd --inputbox "$prompt" 10 70 "$default" 3>&1 1>&2 2>&3
+      local cmd="$UI_BACKEND" result
+      if ! result=$($cmd --inputbox "$prompt" 10 70 "$default" 3>&1 1>&2 2>&3 </dev/tty); then
+        return 1
+      fi
+      printf '%s' "$result"
       ;;
     *)
       local value="$default"
-      read -r -p "$prompt${default:+ [$default]}: " value
-      echo "${value:-$default}"
+      read -r -p "$prompt${default:+ [$default]}: " value </dev/tty
+      printf '%s' "${value:-$default}"
       ;;
   esac
 }
@@ -183,20 +186,22 @@ ui_choose() {
         i=$((i + 1))
       done
       local choice
-      choice=$($cmd --menu "$prompt" 20 78 10 "${menu_args[@]}" 3>&1 1>&2 2>&3) || return 1
-      echo "${options[$choice]}"
+      if ! choice=$($cmd --menu "$prompt" 20 78 10 "${menu_args[@]}" 3>&1 1>&2 2>&3 </dev/tty); then
+        return 1
+      fi
+      printf '%s' "${options[$choice]}"
       ;;
     *)
-      echo "$prompt"
+      echo "$prompt" >&2
       local n=1
       for opt in "${options[@]}"; do
-        echo "  $n) $opt"
+        echo "  $n) $opt" >&2
         n=$((n + 1))
       done
       local pick
-      read -r -p "Выбор [1]: " pick
+      read -r -p "Выбор [1]: " pick </dev/tty
       pick="${pick:-1}"
-      echo "${options[$((pick - 1))]}"
+      printf '%s' "${options[$((pick - 1))]}"
       ;;
   esac
 }
@@ -240,14 +245,14 @@ ui_table() {
       ;;
     *)
       if [[ ${#headers[@]} -gt 0 ]]; then
-        printf '%s | ' "${headers[@]}"
-        echo ""
-        printf '%.0s-' {1..60}
-        echo ""
+        printf '%s | ' "${headers[@]}" >&2
+        echo "" >&2
+        printf '%.0s-' {1..60} >&2
+        echo "" >&2
       fi
       local row
       for row in "$@"; do
-        echo "$row" | tr '|' ' | '
+        echo "$row" | tr '|' ' | ' >&2
       done
       ;;
   esac

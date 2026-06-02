@@ -82,7 +82,15 @@ dns_interactive_domain() {
   else
     if ui_confirm "Есть домен, указывающий на этот сервер?" false; then
       use_domain=true
-      domain=$(ui_input "Введите домен" "" "proxy.example.com")
+      if ! domain=$(ui_input "Введите домен" "" "proxy.example.com"); then
+        ui_error "Ввод домена отменён"
+        return 1
+      fi
+      domain="$(echo "$domain" | tr -d '[:space:]')"
+      if [[ -z "$domain" ]]; then
+        ui_error "Домен не может быть пустым"
+        return 1
+      fi
     fi
   fi
 
