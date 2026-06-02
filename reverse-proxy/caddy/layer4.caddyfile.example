@@ -1,0 +1,33 @@
+# MTProto proxy via SNI routing (layer4)
+#
+# Requires Caddy built with caddy-l4 plugin:
+#   https://github.com/mholt/caddy-l4
+#
+# mtg listens on 127.0.0.1:${MTPROTO_BIND_PORT} (see ./init.sh SNI mode).
+# Replace ${MTPROTO_DOMAIN} with your proxy domain.
+
+{
+	layer4 {
+		:443 {
+			route {
+				@sni tls sni ${MTPROTO_DOMAIN}
+				handle @sni {
+					proxy {
+						upstream 127.0.0.1:${MTPROTO_BIND_PORT}
+					}
+				}
+				handle {
+					proxy {
+						upstream 127.0.0.1:443
+					}
+				}
+			}
+		}
+	}
+}
+
+# Notes:
+# - Default upstream 127.0.0.1:443 assumes HTTPS apps (e.g. another Caddy HTTP instance)
+#   or adjust to your setup.
+# - UFW: allow 443/tcp
+# - Client link: server=${MTPROTO_DOMAIN} port=443

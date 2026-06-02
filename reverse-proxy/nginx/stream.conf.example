@@ -1,0 +1,27 @@
+# MTProto proxy via nginx stream SNI routing
+#
+# Include from nginx.conf: include /path/to/stream.conf;
+# mtg listens on 127.0.0.1:${MTPROTO_BIND_PORT} (see ./init.sh SNI mode).
+#
+# Replace ${MTPROTO_DOMAIN} with your proxy domain.
+
+stream {
+    map $ssl_preread_server_name $upstream_backend {
+        ${MTPROTO_DOMAIN}   127.0.0.1:${MTPROTO_BIND_PORT};
+        default             127.0.0.1:443;
+    }
+
+    server {
+        listen 443;
+        listen [::]:443;
+        ssl_preread on;
+        proxy_pass $upstream_backend;
+        proxy_connect_timeout 10s;
+    }
+}
+
+# Notes:
+# - default 127.0.0.1:443 — ваш HTTPS backend (Caddy и т.д.), измените при необходимости
+# - UFW: allow 443/tcp
+# - Client link: server=${MTPROTO_DOMAIN} port=443
+# - reload: sudo nginx -t && sudo systemctl reload nginx
