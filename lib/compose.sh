@@ -39,6 +39,30 @@ compose_write_env() {
 
   compose_build_links "$server" "$client_port" "$secret"
 
+  local socks5_block=""
+  if [[ "${SOCKS5_ENABLED:-0}" == "1" ]]; then
+    bot_proxy_build_url "$server" "${SOCKS5_HOST_PORT}" "${SOCKS5_USER}" "${SOCKS5_PASSWORD}"
+    socks5_block="
+SOCKS5_ENABLED=1
+SOCKS5_HOST_PORT=${SOCKS5_HOST_PORT}
+SOCKS5_PUBLISH_HOST=${SOCKS5_PUBLISH_HOST:-0.0.0.0}
+SOCKS5_USER=${SOCKS5_USER}
+SOCKS5_PASSWORD=${SOCKS5_PASSWORD}
+BOT_PROXY_URL=${BOT_PROXY_URL}
+BOT_PROXY_HTTP_URL=${BOT_PROXY_URL}
+BOT_PROXY_HTTPS_URL=${BOT_PROXY_URL}"
+  else
+    socks5_block="
+SOCKS5_ENABLED=0
+SOCKS5_HOST_PORT=1080
+SOCKS5_PUBLISH_HOST=0.0.0.0
+SOCKS5_USER=
+SOCKS5_PASSWORD=
+BOT_PROXY_URL=
+BOT_PROXY_HTTP_URL=
+BOT_PROXY_HTTPS_URL="
+  fi
+
   cat >"$PROJECT_ROOT/.env" <<EOF
 MTPROTO_HOST_PORT=${docker_host_port}
 MTPROTO_CLIENT_PORT=${client_port}
@@ -50,33 +74,58 @@ MTPROTO_SERVER=${server}
 MTPROTO_MODE=${mode}
 MTPROTO_LINK_TG=${LINK_TG}
 MTPROTO_LINK_HTTPS=${LINK_HTTPS}
-TZ=${tz}
+TZ=${tz}${socks5_block}
 EOF
 }
 
 compose_show_final_summary() {
   ui_title "Готово"
   echo ""
+  echo "  --- MTProto (клиенты Telegram) ---"
   echo "  Server:  ${SELECTED_SERVER}"
   echo "  Port:    ${CLIENT_PORT:-$SELECTED_PORT}"
   echo "  Mode:    ${SELECTED_MODE}"
   echo "  Secret:  ${GENERATED_SECRET}"
   echo ""
-  echo "  Telegram:"
   echo "  ${LINK_TG}"
   echo ""
-  echo "  Share:"
   echo "  ${LINK_HTTPS}"
   echo ""
-  ui_info "Повторно показать ссылку: ./scripts/show-link.sh"
+
+  if [[ "${SOCKS5_ENABLED:-0}" == "1" ]]; then
+    echo "  --- SOCKS5 (боты / Bot API) ---"
+    echo "  Host:    ${SELECTED_SERVER}:${SOCKS5_HOST_PORT}"
+    echo "  User:    ${SOCKS5_USER}"
+    echo "  Pass:    ${SOCKS5_PASSWORD}"
+    echo ""
+    echo "  .env на сервере бота:"
+    echo "  TELEGRAM_PROXY_URL='${BOT_PROXY_URL}'"
+    echo "  # или для многих библиотек:"
+    echo "  HTTPS_PROXY='${BOT_PROXY_URL}'"
+    echo "  HTTP_PROXY='${BOT_PROXY_URL}'"
+    echo ""
+    ui_info "Повторно показать: ./scripts/show-bot-proxy.sh"
+  fi
+
+  ui_info "MTProto ссылка: ./scripts/show-link.sh"
   ui_info "Диагностика: ./scripts/doctor.sh"
 }
 
+compose_compose_profiles() {
+  if [[ "${SOCKS5_ENABLED:-0}" == "1" ]]; then
+    echo "--profile bot"
+  fi
+}
+
 compose_start_stack() {
+  local profiles
+  profiles=$(compose_compose_profiles)
+
   ui_spin "Запуск docker compose" bash -c "
     set -euo pipefail
     cd \"$PROJECT_ROOT\"
-    docker compose up -d
+    # shellcheck disable=SC2086
+    docker compose $profiles up -d
   " || {
     ui_error "Не удалось запустить контейнер"
     return 1

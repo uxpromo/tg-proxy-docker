@@ -42,18 +42,20 @@ MTProto использует **только TCP**. UDP открывать не �
 | Шаг | Действие |
 |-----|----------|
 | 1 | Проверка Docker и Compose |
-| 2 | Сканирование портов, выбор свободного |
+| 2 | Сканирование портов MTProto, выбор свободного |
 | 3 | Домен (опционально) и генерация секрета |
 | 4 | Сниппет Caddy/nginx (опционально, SNI на :443) |
-| 5 | UFW: проверка и предложение открыть порт |
-| 6 | Запись `config/mtg.toml`, `.env` |
-| 7 | `docker compose up -d`, `mtg doctor`, вывод ссылки |
+| 5 | **SOCKS5 для ботов** (опционально) |
+| 6 | UFW: порты MTProto и SOCKS5 |
+| 7 | Запись `config/mtg.toml`, `.env` |
+| 8 | `docker compose up -d`, `mtg doctor`, вывод ссылок |
 
 Non-interactive режим:
 
 ```bash
 ./init.sh --yes --port 8443 --no-domain
-./init.sh --yes --port 443 --domain proxy.example.com --ufw-allow
+./init.sh --yes --port 4433 --domain proxy.example.com --ufw-allow
+./init.sh --yes --port 4433 --domain proxy.example.com --bot-proxy --bot-port 1080 --ufw-allow
 ./init.sh --yes --port 8443 --no-domain --no-start   # только конфиг
 ```
 
@@ -67,15 +69,59 @@ Non-interactive режим:
 - **port** — порт из ссылки (8443, 443 и т.д.)
 - **secret** — пароль прокси; **не публикуйте** его в открытых каналах
 
+## SOCKS5 для Telegram-ботов (Bot API)
+
+**MTProto (`tg://`) и SOCKS5 — разные протоколы.**
+
+| | MTProto (mtg) | SOCKS5 (опционально) |
+|---|---------------|----------------------|
+| Для кого | клиент Telegram на телефоне | боты, скрипты, `curl` |
+| Ссылка | `tg://proxy?...` | `socks5h://user:pass@host:1080` |
+| В `.env` бота | не используется | `HTTPS_PROXY` / `TELEGRAM_PROXY_URL` |
+
+Если бот на **отдельном заблокированном сервере**, при `./init.sh` ответьте **«Да»** на шаге «SOCKS5 для ботов». Мастер:
+
+- поднимет контейнер `serjs/go-socks5-proxy` (`docker compose --profile bot`)
+- сгенерирует логин/пароль
+- откроет порт в UFW (обычно **1080**)
+
+```bash
+./scripts/show-bot-proxy.sh
+```
+
+Пример `.env` **на сервере бота**:
+
+```env
+HTTPS_PROXY='socks5h://tgproxy:PASSWORD@node-1.finzor.dev:1080'
+HTTP_PROXY='socks5h://tgproxy:PASSWORD@node-1.finzor.dev:1080'
+```
+
+Проверка **с сервера бота**:
+
+```bash
+curl -x 'socks5h://tgproxy:PASSWORD@node-1.finzor.dev:1080' --max-time 15 https://api.telegram.org
+```
+
+Перезапуск с SOCKS5, если уже развёрнут только MTProto:
+
+```bash
+./init.sh   # «Да» на SOCKS5, перезаписать конфиг
+docker compose --profile bot up -d --force-recreate
+```
+
 ## Ежедневные команды
 
 ```bash
-./scripts/show-link.sh          # ссылка для клиента
-./scripts/doctor.sh             # диагностика mtg + статус контейнера
+./scripts/show-link.sh          # MTProto ссылка для клиента
+./scripts/show-bot-proxy.sh     # SOCKS5 строка для бота
+./scripts/doctor.sh             # диагностика mtg + socks5
 docker compose ps               # статус
-docker compose logs -f mtg      # логи
+docker compose --profile bot ps # + SOCKS5 если включён
+docker compose logs -f mtg      # логи MTProto
+docker compose logs -f socks5   # логи SOCKS5
 docker compose restart mtg      # перезапуск
-docker compose down             # остановка
+docker compose down             # остановка MTProto
+docker compose --profile bot down  # остановить всё
 ```
 
 ## Режимы: с доменом и без
@@ -167,6 +213,10 @@ docker compose up -d
 | `MTPROTO_MODE` | `simple` / `faketls` | `simple` |
 | `MTPROTO_LINK_TG` | Полная tg:// ссылка | генерируется init |
 | `MTPROTO_LINK_HTTPS` | Ссылка t.me/proxy | генерируется init |
+| `SOCKS5_ENABLED` | `1` — поднят SOCKS5 для ботов | `0` / `1` |
+| `SOCKS5_HOST_PORT` | Порт SOCKS5 на хосте | `1080` |
+| `SOCKS5_USER` / `SOCKS5_PASSWORD` | Авторизация SOCKS5 | генерируется init |
+| `BOT_PROXY_URL` | Готовая строка `socks5h://...` | для `.env` бота |
 | `TZ` | Часовой пояс логов | `Europe/Moscow` |
 
 ## Troubleshooting

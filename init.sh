@@ -11,6 +11,8 @@ CLI_DOMAIN=""
 CLI_NO_DOMAIN=0
 UFW_ALLOW=0
 CLI_START=1
+CLI_BOT_PROXY=0
+CLI_BOT_PORT=""
 
 MTPROTO_BIND_PORT=3128
 SELECTED_PORT=""
@@ -34,6 +36,8 @@ Options:
   --domain DOMAIN        Enable fake TLS mode with domain
   --no-domain            Simple mode (IP + hex secret)
   --ufw-allow            Open selected port in UFW (non-interactive)
+  --bot-proxy            Enable SOCKS5 proxy for Telegram bots
+  --bot-port PORT        SOCKS5 port (default: first free among 1080,1081,...)
   --no-start             Generate config only, do not run docker compose
   -h, --help             Show this help
 
@@ -41,6 +45,7 @@ Examples:
   ./init.sh
   ./init.sh --yes --port 8443 --no-domain
   ./init.sh --yes --port 443 --domain proxy.example.com --ufw-allow
+  ./init.sh --yes --port 4433 --domain node.example.com --bot-proxy --ufw-allow
 EOF
 }
 
@@ -67,6 +72,14 @@ parse_args() {
       --ufw-allow)
         UFW_ALLOW=1
         shift
+        ;;
+      --bot-proxy)
+        CLI_BOT_PROXY=1
+        shift
+        ;;
+      --bot-port)
+        CLI_BOT_PORT="$2"
+        shift 2
         ;;
       --no-start)
         CLI_START=0
@@ -109,17 +122,19 @@ source_lib() {
   source "$PROJECT_ROOT/lib/compose.sh"
   # shellcheck source=lib/prereq.sh
   source "$PROJECT_ROOT/lib/prereq.sh"
+  # shellcheck source=lib/bot-proxy.sh
+  source "$PROJECT_ROOT/lib/bot-proxy.sh"
 }
 
 step_environment() {
-  ui_step 1 7 "Окружение"
+  ui_step 1 8 "Окружение"
   prereq_setup_ui
   prereq_check_docker || exit 1
   prereq_check_existing_config
 }
 
 step_ports() {
-  ui_step 2 7 "Порты"
+  ui_step 2 8 "Порты MTProto"
   ufw_detect
 
   if [[ -n "$CLI_PORT" ]]; then
@@ -134,7 +149,7 @@ step_ports() {
 }
 
 step_domain() {
-  ui_step 3 7 "Домен и режим"
+  ui_step 3 8 "Домен и режим"
 
   if [[ "$CLI_NO_DOMAIN" == "1" ]]; then
     dns_detect_public_ip
@@ -161,13 +176,21 @@ step_domain() {
 }
 
 step_firewall() {
-  ui_step 5 7 "UFW"
+  ui_step 6 8 "UFW"
   local fw_port="${CLIENT_PORT:-$SELECTED_PORT}"
   ufw_interactive_allow "$fw_port"
+  if [[ "${SOCKS5_ENABLED:-0}" == "1" ]]; then
+    ufw_interactive_allow "$SOCKS5_HOST_PORT"
+  fi
+}
+
+step_bot_proxy() {
+  ui_step 5 8 "SOCKS5 для ботов"
+  bot_proxy_interactive_setup
 }
 
 step_reverse_proxy() {
-  ui_step 4 7 "Reverse proxy (опционально)"
+  ui_step 4 8 "Reverse proxy (опционально)"
 
   if [[ "$NONINTERACTIVE" == "1" ]]; then
     return 0
@@ -233,7 +256,7 @@ step_reverse_proxy() {
 }
 
 step_generate() {
-  ui_step 6 7 "Генерация конфигурации"
+  ui_step 7 8 "Генерация конфигурации"
 
   secrets_generate "$SELECTED_MODE" "$SELECTED_DOMAIN" || exit 1
 
@@ -264,7 +287,7 @@ step_generate() {
 }
 
 step_start() {
-  ui_step 7 7 "Запуск"
+  ui_step 8 8 "Запуск"
 
   if [[ "${NONINTERACTIVE:-0}" == "1" && "$CLI_START" == "0" ]]; then
     ui_info "Конфигурация создана (--no-start)"
@@ -295,6 +318,7 @@ main() {
   step_ports
   step_domain
   step_reverse_proxy
+  step_bot_proxy
   step_firewall
   step_generate
   step_start
