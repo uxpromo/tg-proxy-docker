@@ -173,24 +173,44 @@ step_reverse_proxy() {
     return 0
   fi
 
-  if ! ports_is_listening 443; then
+  # Пользователь уже выбрал отдельный порт — SNI на :443 его отменит.
+  if [[ "$SELECTED_PORT" != "443" ]]; then
+    ui_info "Вы выбрали порт ${SELECTED_PORT} — MTProto будет доступен на node:${SELECTED_PORT}"
+    ui_info "Для этого Caddy/nginx не нужны (рекомендуется «Пропустить»)"
+    if ports_is_listening 443; then
+      ui_info "Порт 443 занят ($(ports_get_listener_hint 443)) — это нормально, VPN не затрагивается"
+    fi
+    if ! ui_confirm "Показать сниппеты SNI-routing на :443 anyway?" false; then
+      REVERSE_PROXY="none"
+      return 0
+    fi
+  elif ! ports_is_listening 443; then
     ui_info "Порт 443 свободен — SNI-routing обычно не нужен"
     if ! ui_confirm "Показать сниппеты Caddy/nginx anyway?" false; then
       return 0
     fi
   else
-    ui_info "Порт 443 занят ($(ports_get_listener_hint 443)) — SNI-routing может понадобиться"
+    ui_info "Порт 443 занят ($(ports_get_listener_hint 443)) — SNI-routing потребует правок прокси"
+    ui_warn "Если вы уже выбрали отдельный порт на шаге 2, нажмите «Пропустить»"
   fi
 
   local choice
   choice=$(ui_choose "Интеграция с reverse proxy на :443" \
-    "Пропустить" \
-    "Caddy L4" \
-    "nginx stream") || return 0
+    "Пропустить — использовать порт ${SELECTED_PORT}" \
+    "Caddy L4 (клиенты на :443, нужен caddy-l4)" \
+    "nginx stream (клиенты на :443)") || return 0
 
   case "$choice" in
-    "Caddy L4"|"nginx stream")
-      REVERSE_PROXY="$choice"
+    "Caddy L4 (клиенты на :443, нужен caddy-l4)"|"nginx stream (клиенты на :443)")
+      local sni_label="${choice%% (*}"
+      if [[ "$SELECTED_PORT" != "443" ]]; then
+        ui_warn "Режим SNI отменяет выбранный порт ${SELECTED_PORT} — клиенты пойдут на :443"
+        ui_confirm "Продолжить с SNI на :443?" false || {
+          REVERSE_PROXY="none"
+          return 0
+        }
+      fi
+      REVERSE_PROXY="$sni_label"
       PUBLISH_HOST="127.0.0.1"
       CLIENT_PORT=443
       if [[ "$SELECTED_MODE" != "faketls" ]]; then
@@ -203,10 +223,11 @@ step_reverse_proxy() {
       fi
       ui_warn "mtg будет слушать только 127.0.0.1:${MTPROTO_BIND_PORT}"
       ui_warn "Настройте Caddy/nginx по сниппету из reverse-proxy/"
-      compose_show_reverse_proxy_snippet "$choice"
+      compose_show_reverse_proxy_snippet "$sni_label"
       ;;
     *)
       REVERSE_PROXY="none"
+      ui_info "MTProto будет опубликован на 0.0.0.0:${SELECTED_PORT}"
       ;;
   esac
 }
