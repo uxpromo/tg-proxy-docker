@@ -9,9 +9,3 @@ services:
       - ./config/mtg.toml:/config.toml:ro
     ports:
       - "${MTPROTO_PUBLISH_HOST:-0.0.0.0}:${MTPROTO_HOST_PORT}:${MTPROTO_BIND_PORT}"
-    healthcheck:
-      test: ["CMD", "/mtg", "doctor", "/config.toml"]
-      interval: 30s
-      timeout: 15s
-      retries: 3
-      start_period: 10s

@@ -7,7 +7,8 @@ Docker Compose-обёртка над [mtg](https://github.com/9seconds/mtg) дл
 ## Быстрый старт
 
 ```bash
-git clone <repo-url> tg-proxy && cd tg-proxy
+git clone https://github.com/uxpromo/tg-proxy-docker.git tg-proxy && cd tg-proxy
+# SSH: git clone git@github.com:uxpromo/tg-proxy-docker.git tg-proxy && cd tg-proxy
 chmod +x init.sh scripts/*.sh
 ./init.sh
 ```
@@ -81,14 +82,14 @@ docker compose down             # остановка
 
 | | Без домена | С доменом |
 |---|------------|-----------|
-| Секрет | случайный hex (32 символа) | `ee…` (fake TLS, домен в секрете) |
+| Секрет | FakeTLS (`ee…`), front: cloudflare.com | FakeTLS (`ee…`), ваш домен |
 | Server в ссылке | IP сервера | домен |
 | DNS | не нужен | A-record → IP сервера |
 | Сертификат Let's Encrypt | не нужен | не нужен для mtg |
 | Обфускация | базовая | лучше (трафик похож на HTTPS) |
 | Рекомендуемый порт | свободный (8443, 4433…) | 443 или SNI-routing |
 
-**Fake TLS:** mtg эмулирует TLS-handshake; клиент Telegram понимает секрет с префиксом `ee`, в котором закодирован домен.
+**Fake TLS:** mtg v2 поддерживает только FakeTLS — секрет всегда начинается с `ee` (или base64). Без своего домена мастер генерирует секрет с front-доменом `cloudflare.com`, а в ссылке указывает IP сервера.
 
 ## UFW и файрвол
 
@@ -149,7 +150,7 @@ EOF
 docker compose up -d
 ```
 
-Секрет без домена: `openssl rand -hex 16`  
+Секрет без своего домена: генерируется автоматически (`./init.sh --no-domain`)  
 С доменом: `docker run --rm nineseconds/mtg:2 generate-secret --hex your.domain`
 
 ## Переменные окружения

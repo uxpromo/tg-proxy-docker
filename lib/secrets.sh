@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
 
 MTG_IMAGE="${MTG_IMAGE:-nineseconds/mtg:2.2}"
-
-secrets_generate_simple() {
-  if command -v openssl >/dev/null 2>&1; then
-    openssl rand -hex 16
-  else
-    docker run --rm "$MTG_IMAGE" generate-secret --hex 2>/dev/null | tail -1 || {
-      ui_error "Не удалось сгенерировать секрет (нужен openssl или docker)"
-      return 1
-    }
-  fi
-}
+# mtg v2 requires FakeTLS secrets (ee… hex or base64). Used when user has no own domain.
+DEFAULT_FRONT_DOMAIN="${DEFAULT_FRONT_DOMAIN:-cloudflare.com}"
 
 secrets_generate_faketls() {
   local domain="$1"
-  docker run --rm "$MTG_IMAGE" generate-secret --hex "$domain" 2>/dev/null | tail -1
+  local secret
+  secret=$(docker run --rm "$MTG_IMAGE" generate-secret --hex "$domain" 2>/dev/null | tail -1 | tr -d '[:space:]')
+  if [[ -z "$secret" ]]; then
+    ui_error "Не удалось сгенерировать секрет для домена $domain"
+    return 1
+  fi
+  echo "$secret"
+}
+
+secrets_generate_simple() {
+  # No user domain: client connects by IP, secret still uses FakeTLS with a generic front domain.
+  secrets_generate_faketls "$DEFAULT_FRONT_DOMAIN"
 }
 
 secrets_generate() {
@@ -36,10 +38,5 @@ secrets_generate() {
       ;;
   esac
 
-  secret="$(echo "$secret" | tr -d '[:space:]')"
-  if [[ -z "$secret" ]]; then
-    ui_error "Пустой секрет"
-    return 1
-  fi
   GENERATED_SECRET="$secret"
 }
